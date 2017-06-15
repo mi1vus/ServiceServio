@@ -114,7 +114,8 @@ namespace Service
                         azs.oper,
                         azs.operId,
                         term.Ip,
-                        term.Info.State == Driver.TermInfo.States.Work ? "" : term.Info.State.ToString()
+                        StateToString(term.Info.State),
+                        term.Info.Version
                     )
             );
 
@@ -127,12 +128,40 @@ namespace Service
             return terminals.ToList();
         }
 
+        private delegate void ColorizeRow_Delegate(int index, string info);
         private void ColorizeRow(int index, string info)
         {
+            if (dataGridView1.InvokeRequired)
+            {
+                dataGridView1.Invoke(new ColorizeRow_Delegate(ColorizeRow), index, info);
+                return;
+            }
+            
             dataGridView1.Rows[index].DefaultCellStyle.BackColor =
-                info == "Error" ? Color.PaleVioletRed :
-                info == "Warning" ? Color.Orange :
-                Color.White;
+                String.Compare(info, StateToString(Driver.TermInfo.States.Error), StringComparison.Ordinal) == 0 
+                    ? Color.PaleVioletRed :
+                    String.Compare(info, StateToString(Driver.TermInfo.States.Warning), StringComparison.Ordinal) == 0 
+                    ? Color.Orange :
+                    String.Compare(info, StateToString(Driver.TermInfo.States.Work), StringComparison.Ordinal) == 0
+                    ? Color.LightGreen : Color.White;
+
+            if (String.Compare(info, StateToString(Driver.TermInfo.States.Error), StringComparison.Ordinal) == 0 
+                || String.Compare(info, StateToString(Driver.TermInfo.States.Warning), StringComparison.Ordinal) == 0)
+            {
+                var buttonCell = new DataGridViewButtonCell();
+                dataGridView1.Rows[index].Cells[2] = buttonCell;
+                dataGridView1.Rows[index].Cells[2].Value = info + "...";
+                //dataGridView1.Rows[index].Cells[3].he = "...";
+            }
+            else
+                dataGridView1.Rows[index].Cells[2] = new DataGridViewTextBoxCell();
+        }
+
+        private static string StateToString(Driver.TermInfo.States state)
+        {
+            return state == Driver.TermInfo.States.None ? "Ожидание..." :
+                state == Driver.TermInfo.States.Error ? "Ошибки"
+                : (state == Driver.TermInfo.States.Warning ? "Предупреждения" : "В работе");
         }
 
         class Терминал
@@ -145,8 +174,9 @@ namespace Service
             public int ОператорId;
             public string IP;
             public string Статус { get; set; }
+            public string Версия { get; set; }
 
-            public Терминал(int id, string азс, int азсId, string название, string оператор, int операторId, string ip, string статус)
+            public Терминал(int id, string азс, int азсId, string название, string оператор, int операторId, string ip, string статус, string версия)
             {
                 this.Id = id;
                 this.АЗС = азс;
@@ -156,6 +186,7 @@ namespace Service
                 this.ОператорId = операторId;
                 this.IP = ip;
                 this.Статус = статус;
+                this.Версия = версия;
             }
 
             public override string ToString()
@@ -233,9 +264,9 @@ namespace Service
                         {
                             if (tableRow.IP.CompareTo(args.Info.IP) == 0)
                             {
-                                tableRow.Статус = args.Info.State == Driver.TermInfo.States.Work
-                                    ? ""
-                                    : args.Info.State.ToString();
+                                tableRow.Статус = StateToString(args.Info.State);
+                                if (args.Info.Version?.CompareTo(tableRow.Версия) != 0)
+                                    tableRow.Версия = args.Info.Version;
                                 ColorizeRow(index, tableRow.Статус);
                                 break;
                             }
@@ -248,5 +279,23 @@ namespace Service
         }
 
         static Driver.TermInfo[] terminals;
+
+        private void dataGridView1_CellContentClick(object sender, DataGridViewCellEventArgs e)
+        {
+            var senderGrid = (DataGridView)sender;
+
+            if (senderGrid.Rows[e.RowIndex].Cells[e.ColumnIndex] is DataGridViewButtonCell)
+            {
+                var row = senderGrid.SelectedCells[0].OwningRow.DataBoundItem as Терминал;
+                var info = dictionary.Terminals.First(t => t.Ip.CompareTo(row.IP) == 0).Info;
+                string message = "";
+                if (!string.IsNullOrWhiteSpace(info.Errors))
+                    message += $"Ошибки:\n{info.Errors}\n";
+                if (!string.IsNullOrWhiteSpace(info.Warnings))
+                    message += $"Предупреждения:\n{info.Warnings}\n";
+
+                MessageBox.Show(message);
+            }
+        }
     }
 }
